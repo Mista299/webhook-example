@@ -73,36 +73,65 @@ def checkout(pid):
 def recibir_webhook():
     payload_bytes  = request.get_data()
     firma_recibida = request.headers.get("X-Firma-Webhook", "")
+    timestamp      = request.headers.get("X-Timestamp", "N/A")
+    ip_origen      = request.remote_addr
 
     print(f"\n{SEP}")
-    print(f"📨  Webhook recibido — {datetime.now().strftime('%H:%M:%S')}")
+    print(f"📨  WEBHOOK RECIBIDO — {datetime.now().strftime('%H:%M:%S')}")
+    print(f"{SEP}")
+    print(f"  IP origen       : {ip_origen}")
+    print(f"  Content-Type    : {request.headers.get('Content-Type', 'N/A')}")
+    print(f"  X-Timestamp     : {timestamp}")
+    print(f"  X-Firma-Webhook : {firma_recibida[:32] if firma_recibida else '(ausente)'}…")
+    print(f"  Payload crudo ({len(payload_bytes)} bytes):")
+    print(f"    {payload_bytes.decode('utf-8', errors='replace')}")
 
     # 1. Autenticidad: rechazar si la firma HMAC no cuadra
     if not verificar_firma(payload_bytes, firma_recibida):
-        print("  🚫 FIRMA INVÁLIDA — request rechazado")
+        print(f"  🚫  Solicitud rechazada — respuesta: 401 Unauthorized")
         return jsonify({"error": "Firma inválida"}), 401
+
+    print(f"  ✅  Autenticidad confirmada — procesando evento")
 
     evento    = json.loads(payload_bytes)
     evento_id = evento.get("id")
     tipo      = evento.get("tipo")
     datos     = evento.get("datos", {})
 
-    print(f"  ID   : {evento_id}")
-    print(f"  Tipo : {tipo}")
+    print(f"\n{SEP}")
+    print(f"  📋  EVENTO DECODIFICADO")
+    print(f"{SEP}")
+    print(f"  ID    : {evento_id}")
+    print(f"  Tipo  : {tipo}")
+    print(f"  Datos : {json.dumps(datos, ensure_ascii=False)}")
 
-    # 2. Idempotencia: ignorar eventos ya procesados (consultando la BD)
+    # 2. Idempotencia: ignorar eventos ya procesados
+    print(f"\n{SEP}")
+    print(f"  ♻️   VERIFICACIÓN DE IDEMPOTENCIA")
+    print(f"{SEP}")
+    print(f"  Consultando BD por evento_id='{evento_id}'…")
     if evento_ya_procesado(evento_id):
-        print("  ♻️  Evento duplicado — ignorado (ya está en BD)")
+        print(f"  ⚠️   Encontrado en BD — evento ya procesado anteriormente")
+        print(f"  Acción: ignorar (no re-procesar) → respuesta: 200 duplicado")
         return jsonify({"status": "duplicado, ignorado"}), 200
+    print(f"  ✅  No encontrado en BD — evento nuevo, se procesará")
 
     # 3. Despachar al manejador correcto
+    print(f"\n{SEP}")
+    print(f"  ⚙️   DESPACHANDO MANEJADOR")
+    print(f"{SEP}")
     manejador = MANEJADORES.get(tipo)
     if not manejador:
-        print(f"  ❓ Tipo desconocido: {tipo}")
+        print(f"  ❓  Sin manejador registrado para tipo '{tipo}'")
         return jsonify({"status": "evento no reconocido"}), 200
 
+    print(f"  Manejador : {manejador.__name__}")
     manejador(datos)
+
+    print(f"\n  Registrando evento_id='{evento_id}' en BD (idempotencia futura)…")
     marcar_procesado(evento_id)
+    print(f"  ✅  Registrado")
+
     _mostrar_pedidos()
 
     # Responder 200 rápido es CRÍTICO: el emisor deja de reintentar.
@@ -114,6 +143,21 @@ def _mostrar_pedidos():
     for p in listar_pedidos():
         icono = ICONOS.get(p["estado"], "?")
         print(f"     {icono}  {p['id']}: {p['producto']:<15} → {p['estado'].upper()}")
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"}), 200
+
+
+@app.route("/admin/reset", methods=["POST"])
+def admin_reset():
+    from db import reset_db
+    reset_db()
+    print(f"\n{SEP}")
+    print(f"🔄  BASE DE DATOS RESETEADA — estado inicial restaurado")
+    print(f"{SEP}")
+    return jsonify({"status": "ok"}), 200
 
 
 if __name__ == "__main__":

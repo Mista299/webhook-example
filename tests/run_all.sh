@@ -9,6 +9,7 @@ DIR="$(dirname "$0")"
 
 VERDE='\033[0;32m'
 ROJO='\033[0;31m'
+AMARILLO='\033[1;33m'
 AZUL='\033[0;34m'
 GRIS='\033[0;37m'
 NC='\033[0m'
@@ -20,16 +21,20 @@ printf "${AZUL}╚════════════════════�
 echo ""
 
 printf "Verificando servidor en localhost:5000… "
-if ! curl -s --max-time 2 -o /dev/null \
-     -X POST "http://localhost:5000/webhook/pagos" \
-     -H "X-Firma-Webhook: test" \
-     -H "Content-Type: application/json" \
-     -d '{}' 2>/dev/null; then
+if ! curl -s --max-time 2 -o /dev/null "http://localhost:5000/health" 2>/dev/null; then
     printf "${ROJO}NO DISPONIBLE${NC}\n\n"
     echo "❌  Ejecuta en otra terminal: python receptor.py"
     exit 1
 fi
 printf "${VERDE}OK${NC}\n"
+
+printf "Reseteando base de datos… "
+RESET=$(curl -s -X POST "http://localhost:5000/admin/reset" 2>/dev/null)
+if [ "$RESET" = '{"status":"ok"}' ]; then
+    printf "${VERDE}OK${NC}\n"
+else
+    printf "${AMARILLO}no disponible — continúa con estado actual${NC}\n"
+fi
 
 PASADOS=0
 FALLADOS=0
@@ -49,23 +54,23 @@ caso() {
     printf "\n${AZUL}── %s ──────────────────────────────────────${NC}\n" "$1"
 }
 
-caso "caso_01_pago_exitoso"
-correr "$DIR/caso_01_pago_exitoso/1_cliente_paga.sh"
-correr "$DIR/caso_01_pago_exitoso/2_notificacion.sh"
+caso "c1-pago-exitoso"
+correr "$DIR/c1-pago-exitoso/1_cliente_paga.sh"
+correr "$DIR/c1-pago-exitoso/2_notificacion.sh"
 
-caso "caso_02_pago_fallido"
-correr "$DIR/caso_02_pago_fallido/1_cliente_paga.sh"
-correr "$DIR/caso_02_pago_fallido/2_notificacion.sh"
+caso "c2-pago-fallido"
+correr "$DIR/c2-pago-fallido/1_cliente_paga.sh"
+correr "$DIR/c2-pago-fallido/2_notificacion.sh"
 
-caso "caso_03_reembolso"
-correr "$DIR/caso_03_reembolso/1_notificacion.sh"
+caso "c3-reembolso"
+correr "$DIR/c3-reembolso/1_notificacion.sh"
 
-caso "caso_04_firma_invalida"
-correr "$DIR/caso_04_firma_invalida/1_ataque.sh"
+caso "c4-firma-invalida"
+correr "$DIR/c4-firma-invalida/1_ataque.sh"
 
-caso "caso_05_idempotencia"
-correr "$DIR/caso_05_idempotencia/1_primer_envio.sh"
-correr "$DIR/caso_05_idempotencia/2_reintento.sh"
+caso "c5-idempotencia"
+correr "$DIR/c5-idempotencia/1_primer_envio.sh"
+correr "$DIR/c5-idempotencia/2_reintento.sh"
 
 echo ""
 printf "${AZUL}══════════════════════════════════════════════${NC}\n"

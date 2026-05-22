@@ -15,6 +15,9 @@ import requests
 from config import WEBHOOK_SECRET, WEBHOOK_URL
 
 
+_SEP = "─" * 54
+
+
 def _firmar(payload_bytes: bytes) -> str:
     return hmac.new(
         key=WEBHOOK_SECRET.encode("utf-8"),
@@ -26,12 +29,44 @@ def _firmar(payload_bytes: bytes) -> str:
 def enviar_evento(evento: dict) -> int:
     """Firma y envía un evento al receptor. Devuelve el HTTP status code."""
     payload_bytes = json.dumps(evento, separators=(",", ":")).encode("utf-8")
+    firma         = _firmar(payload_bytes)
+    timestamp     = str(int(time.time()))
+
+    print(f"\n  {_SEP}")
+    print(f"  📤  PREPARANDO ENVÍO")
+    print(f"  {_SEP}")
+    print(f"  Payload (JSON compacto, sin espacios):")
+    print(f"    {payload_bytes.decode('utf-8')}")
+    print(f"  Tamaño payload : {len(payload_bytes)} bytes")
+    print(f"  {_SEP}")
+    print(f"  🔑  GENERACIÓN DE FIRMA HMAC-SHA256")
+    print(f"    Clave secreta  : {WEBHOOK_SECRET}")
+    print(f"    Algoritmo      : HMAC-SHA256")
+    print(f"    Pasos:")
+    print(f"      1. Codificar clave secreta → bytes UTF-8")
+    print(f"      2. Aplicar HMAC(key=clave, msg=payload, digest=SHA-256)")
+    print(f"      3. Convertir el digest binario a hexadecimal (64 chars)")
+    print(f"    Firma resultante:")
+    print(f"      {firma[:32]}")
+    print(f"      {firma[32:]}")
+    print(f"  {_SEP}")
+    print(f"  Cabeceras HTTP que se envían:")
+    print(f"    Content-Type    : application/json")
+    print(f"    X-Firma-Webhook : {firma[:32]}…")
+    print(f"    X-Timestamp     : {timestamp}")
+    print(f"  Destino: POST {WEBHOOK_URL}")
+    print(f"  {_SEP}")
+
     headers = {
         "Content-Type":    "application/json",
-        "X-Firma-Webhook": _firmar(payload_bytes),
-        "X-Timestamp":     str(int(time.time())),
+        "X-Firma-Webhook": firma,
+        "X-Timestamp":     timestamp,
     }
     respuesta = requests.post(WEBHOOK_URL, data=payload_bytes, headers=headers)
+
+    print(f"  ⬅️   Respuesta del receptor: HTTP {respuesta.status_code}")
+    print(f"       Body: {respuesta.text.strip()}")
+
     return respuesta.status_code
 
 
